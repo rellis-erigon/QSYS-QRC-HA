@@ -132,6 +132,11 @@ class StoredControl:
         data["writable"] = self.writable
         data["platform"] = self.config.resolved_platform(self.suggested)
         data["group"] = self.config.resolved_group(self.component)
+        # The integration feed calls these min and max, and so does the UI.
+        # Two names for the same number is how a slider ends up offering
+        # "undefined to undefined".
+        data["min"] = self.minimum
+        data["max"] = self.maximum
         return data
 
 

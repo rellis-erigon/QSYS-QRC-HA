@@ -87,6 +87,23 @@ tr.flash { animation: flash 1s ease-out; }
   border-radius: 8px; padding: 8px 12px; margin-bottom: 10px;
 }
 .empty { padding: 44px 8px; text-align: center; color: var(--muted); }
+tr.on td:nth-child(2) { box-shadow: inset 3px 0 0 var(--accent); }
+tr.on .key { color: var(--accent); }
+.viewnav { display: flex; gap: 6px; padding: 0 20px; }
+.viewnav button.active { background: var(--accent); border-color: var(--accent); color: #002b22; }
+.dev {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 14px; margin-bottom: 10px;
+}
+.dev h3 { margin: 0; font-size: 15px; font-weight: 650; display: flex; gap: 10px; align-items: baseline; }
+.dev .area { font-size: 12px; color: var(--accent); font-weight: 600; }
+.dev .area.none { color: var(--warn); font-weight: 400; }
+.dev table { margin-top: 8px; }
+.dev td, .dev th { padding: 4px 8px; font-size: 13px; }
+.tag {
+  display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px;
+  background: var(--line); color: var(--muted); margin-left: 4px;
+}
 .toast {
   position: fixed; right: 16px; bottom: 16px; background: var(--panel);
   border: 1px solid var(--line); border-left: 3px solid var(--bad);
@@ -98,8 +115,13 @@ tr.flash { animation: flash 1s ease-out; }
   .layout { flex-direction: column; }
   .side { width: auto; flex: none; border-right: none;
           border-bottom: 1px solid var(--line); max-height: 190px; }
+  /* Only the write controls go first. Device and area are settings, and a
+     settings column that vanishes is why nobody could see what was set. */
   .hide-narrow { display: none; }
   .main, .bar, .cores, header { padding-left: 10px; padding-right: 10px; }
+}
+@media (max-width: 560px) {
+  .hide-tiny { display: none; }
 }
 </style>
 </head>
@@ -108,6 +130,11 @@ tr.flash { animation: flash 1s ease-out; }
   <h1>Q-SYS Controls</h1>
   <div class="sub" id="summary">Connecting…</div>
 </header>
+
+<div class="viewnav">
+  <button class="active" data-view="browse">Browse &amp; configure</button>
+  <button data-view="exposed">Exposed to Home Assistant <span id="exposed-count"></span></button>
+</div>
 
 <div class="cores" id="cores"></div>
 <datalist id="area-options"></datalist>
@@ -128,7 +155,7 @@ tr.flash { animation: flash 1s ease-out; }
   </label>
 </div>
 
-<div class="layout">
+<div class="layout" id="view-browse">
   <div class="side" id="components"></div>
   <div class="main">
     <div class="selbar" id="selbar" hidden>
@@ -150,8 +177,8 @@ tr.flash { animation: flash 1s ease-out; }
           <th>Control</th>
           <th>Value</th>
           <th>Name</th>
-          <th class="hide-narrow">Device</th>
-          <th class="hide-narrow">Area</th>
+          <th class="hide-tiny">Device</th>
+          <th class="hide-tiny">Area</th>
           <th>Expose as</th>
           <th style="width:40px">On</th>
           <th class="hide-narrow">Set</th>
@@ -161,6 +188,10 @@ tr.flash { animation: flash 1s ease-out; }
     </table>
     <div class="empty" id="empty" hidden></div>
   </div>
+</div>
+
+<div id="view-exposed" style="display:none;padding:12px 20px 40px">
+  <div id="exposed-body"></div>
 </div>
 
 <script>
@@ -224,6 +255,8 @@ async function loadStatus() {
   $("summary").textContent =
     data.total_controls + " controls discovered · " +
     data.exposed_controls + " exposed to Home Assistant";
+  $("exposed-count").textContent = data.exposed_controls
+    ? "(" + data.exposed_controls + ")" : "";
 
   const holder = $("cores");
   holder.replaceChildren();
@@ -386,7 +419,7 @@ function buildRow(control) {
   row.appendChild(cellName);
 
   const cellGroup = document.createElement("td");
-  cellGroup.className = "hide-narrow";
+  cellGroup.className = "hide-tiny";
   const group = document.createElement("input");
   group.style.width = "120px";
   group.placeholder = control.component;
@@ -397,7 +430,7 @@ function buildRow(control) {
   row.appendChild(cellGroup);
 
   const cellArea = document.createElement("td");
-  cellArea.className = "hide-narrow";
+  cellArea.className = "hide-tiny";
   const area = document.createElement("input");
   area.style.width = "120px";
   area.setAttribute("list", "area-options");
@@ -489,6 +522,9 @@ function updateRow(row, control) {
   parts.platform.value = control.platform || "";
   parts.enabled.checked = !!control.config.enabled;
   parts.pick.checked = state.selected.has(control.key);
+  // Being able to see at a glance what is already on matters more than any
+  // filter: the question is almost always "what did I already do here".
+  row.classList.toggle("on", !!control.config.enabled);
 }
 
 function flash(key) {
@@ -565,6 +601,96 @@ function escapeHtml(text) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
+// -- exposed view ---------------------------------------------------------
+//
+// The browse table answers "what could I expose". This answers the question
+// people actually come back with: what is switched on, and set how.
+
+async function loadExposed() {
+  const body = $("exposed-body");
+  body.innerHTML = "<div class='empty'>Loading…</div>";
+
+  let data;
+  try {
+    data = await call("controls?only=enabled&limit=2000");
+  } catch (err) {
+    body.innerHTML = "<div class='empty'>Could not load: " + escapeHtml(err.message) + "</div>";
+    return;
+  }
+
+  const controls = data.controls || [];
+  if (!controls.length) {
+    body.innerHTML = "<div class='empty'>Nothing is exposed yet. "
+      + "Select controls in <b>Browse &amp; configure</b> and press "
+      + "<b>Expose with suggested type</b>.</div>";
+    return;
+  }
+
+  const devices = new Map();
+  for (const control of controls) {
+    const device = control.group || control.component;
+    if (!devices.has(device)) {
+      devices.set(device, { area: "", core: control.core, rows: [] });
+    }
+    const entry = devices.get(device);
+    entry.rows.push(control);
+    if (!entry.area && control.config.area) entry.area = control.config.area;
+  }
+
+  const parts = [];
+  for (const [device, entry] of [...devices].sort((a, b) =>
+      a[0].localeCompare(b[0]))) {
+    parts.push(`
+      <div class="dev">
+        <h3>${esc(device)}
+          <span class="area ${entry.area ? "" : "none"}">
+            ${entry.area ? esc(entry.area) : "no area set"}</span>
+          <span class="tag">${entry.rows.length} ${
+            entry.rows.length === 1 ? "entity" : "entities"}</span>
+        </h3>
+        <table>
+          <thead><tr>
+            <th>Entity name</th><th>Type</th><th>Control</th>
+            <th>Range</th><th>Value</th><th>Settings</th>
+          </tr></thead>
+          <tbody>
+            ${entry.rows.map(exposedRow).join("")}
+          </tbody>
+        </table>
+      </div>`);
+  }
+  body.innerHTML = parts.join("");
+}
+
+function exposedRow(control) {
+  const settings = [];
+  if (control.config.use_position) settings.push("position");
+  if (control.config.entity_category) settings.push(control.config.entity_category);
+  if (control.config.icon) settings.push(esc(control.config.icon));
+  if (control.config.precision !== null && control.config.precision !== undefined) {
+    settings.push(control.config.precision + "dp");
+  }
+  if (control.config.unit && control.config.unit !== control.unit) {
+    settings.push("unit " + esc(control.config.unit));
+  }
+  const range = (control.min !== null && control.min !== undefined
+                 && control.max !== null && control.max !== undefined)
+    ? control.min + " … " + control.max + (control.unit ? " " + esc(control.unit) : "")
+    : "—";
+  return `<tr>
+    <td><b>${esc(control.config.name || control.key)}</b></td>
+    <td>${esc(control.platform)}${control.writable ? "" : "<span class='tag'>read only</span>"}</td>
+    <td><span class="key">${esc(control.key)}</span></td>
+    <td>${range}</td>
+    <td>${esc(control.string || control.value)}</td>
+    <td>${settings.length ? settings.join(", ") : "<span class='tag'>defaults</span>"}</td>
+  </tr>`;
+}
+
+function esc(text) {
+  return escapeHtml(text);
+}
+
 // -- live stream ----------------------------------------------------------
 
 function connectStream() {
@@ -590,6 +716,18 @@ function connectStream() {
 }
 
 // -- wiring ---------------------------------------------------------------
+
+document.querySelectorAll(".viewnav button").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.querySelectorAll(".viewnav button")
+      .forEach((b) => b.classList.remove("active"));
+    button.classList.add("active");
+    const exposed = button.dataset.view === "exposed";
+    $("view-browse").style.display = exposed ? "none" : "";
+    $("view-exposed").style.display = exposed ? "" : "none";
+    if (exposed) loadExposed();
+  });
+});
 
 $("f-core").addEventListener("change", () => {
   state.core = $("f-core").value;

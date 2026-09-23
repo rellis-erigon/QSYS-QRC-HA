@@ -328,3 +328,11 @@ def test_grouping_and_areas_survive_a_reload(tmp_path):
     assert config.icon == "mdi:volume-high"
     assert config.entity_category == "config"
     assert config.precision == 1
+
+
+def test_a_range_is_published_under_the_name_everything_else_uses(tmp_path):
+    """The feed and the UI both say min/max; the dataclass says minimum."""
+    s = store(tmp_path)
+    data = gain(s).to_dict()
+    assert data["min"] == data["minimum"] == -50.0
+    assert data["max"] == data["maximum"] == -25.0
