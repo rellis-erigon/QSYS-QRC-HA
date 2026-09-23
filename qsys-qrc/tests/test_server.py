@@ -352,3 +352,30 @@ async def test_a_control_with_no_group_reports_its_component(client, hub):
     hub.store.configure("Core", "Zone 1/gain", enabled=True)
     body = await (await client.get("/api/integration/controls")).json()
     assert body["controls"][0]["group"] == "Zone 1"
+
+
+async def test_the_payload_carries_every_configured_field(client, hub):
+    """Guards against the config block drifting from the dataclass again.
+
+    A hand-written list of fields stopped including area and device when
+    those were added, so the UI showed them blank however they were set.
+    """
+    from dataclasses import fields
+
+    from control_store import ControlConfig
+
+    body = await (await client.get("/api/controls")).json()
+    carried = set(body["controls"][0]["config"])
+    assert carried == {f.name for f in fields(ControlConfig)}
+
+
+async def test_area_and_device_survive_the_round_trip(client, hub):
+    await client.post("/api/controls/configure", json={
+        "core": "Core", "key": "Zone 1/gain",
+        "area": "Function Room 3", "group": "Function Room 3",
+    })
+    body = await (await client.get("/api/controls?component=Zone 1")).json()
+    row = next(c for c in body["controls"] if c["key"] == "Zone 1/gain")
+    assert row["config"]["area"] == "Function Room 3"
+    assert row["config"]["group"] == "Function Room 3"
+    assert row["group"] == "Function Room 3"

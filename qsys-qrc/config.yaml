@@ -1,6 +1,6 @@
 name: "Q-SYS QRC Bridge"
 description: "Discover Q-SYS Core controls over QRC and expose them to Home Assistant"
-version: "0.1.1"
+version: "0.1.2"
 slug: qsys-qrc
 url: "https://github.com/rellis-erigon/QSYS-QRC-HA"
 init: false

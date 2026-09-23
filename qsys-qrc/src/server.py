@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 from aiohttp import web
@@ -199,15 +200,12 @@ class Hub:
 
 def _payload(control) -> dict:
     data = control.to_dict()
-    data["config"] = {
-        "name": control.config.name,
-        "platform": control.config.platform,
-        "enabled": control.config.enabled,
-        "unit": control.config.unit,
-        "device_class": control.config.device_class,
-        "use_position": control.config.use_position,
-        "notes": control.config.notes,
-    }
+    # Every configured field, taken from the dataclass rather than a list
+    # written out by hand. The hand-written version silently stopped
+    # carrying area and device the moment those were added, so the UI's
+    # boxes for them were always empty — which looked exactly like the
+    # settings not being saved.
+    data["config"] = asdict(control.config)
     data["allowed"] = list(allowed_platforms(control))
     return data
 

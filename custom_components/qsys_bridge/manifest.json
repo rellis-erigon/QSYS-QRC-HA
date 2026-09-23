@@ -1,7 +1,7 @@
 {
   "domain": "qsys_bridge",
   "name": "Q-SYS Bridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "config_flow": true,
   "iot_class": "local_push",
   "requirements": ["aiohttp>=3.8.0"],
