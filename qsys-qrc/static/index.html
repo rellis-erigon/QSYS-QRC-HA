@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q-SYS Controls</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #fff; --line: #e1e4e8; --text: #1c1e21;
+  --muted: #6a737d; --accent: #0b8; --ok: #2e9e4f; --warn: #d98600;
+  --bad: #c1352b; --flash: rgba(0, 187, 136, .25);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418; --panel: #1b1f24; --line: #2c333b; --text: #e6e8ea;
+    --muted: #8b949e; --accent: #2dd4a7; --ok: #4caf50; --warn: #ffa726;
+    --bad: #ef5350; --flash: rgba(45, 212, 167, .18);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header { padding: 14px 20px 6px; }
+h1 { margin: 0 0 3px; font-size: 19px; font-weight: 600; }
+.sub { color: var(--muted); font-size: 13px; }
+.cores { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 20px; }
+.core {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 12px; min-width: 220px;
+}
+.core b { display: block; }
+.core .meta { color: var(--muted); font-size: 12px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+       margin-right: 6px; background: var(--muted); vertical-align: 1px; }
+.dot.up { background: var(--ok); } .dot.down { background: var(--bad); }
+.bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 20px; position: sticky; top: 0; z-index: 5;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+input, select, button {
+  font: inherit; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
+}
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #002b22; }
+button:disabled { opacity: .5; cursor: default; }
+.grow { flex: 1 1 200px; min-width: 150px; }
+.spacer { flex: 1 1 auto; }
+.layout { display: flex; gap: 0; align-items: flex-start; }
+.side {
+  width: 250px; flex: 0 0 250px; border-right: 1px solid var(--line);
+  padding: 10px; max-height: calc(100vh - 150px); overflow: auto;
+}
+.comp {
+  display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px;
+  border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.comp:hover { background: var(--panel); }
+.comp.active { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
+.comp .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comp .c { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.comp .c b { color: var(--accent); }
+.main { flex: 1; padding: 10px 20px 40px; min-width: 0; }
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left; font-size: 12px; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted); font-weight: 600;
+  padding: 8px 8px; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr.flash { animation: flash 1s ease-out; }
+@keyframes flash { from { background: var(--flash); } to { background: transparent; } }
+.key { font-family: ui-monospace, Menlo, monospace; font-weight: 600; font-size: 13px; }
+.sub2 { font-size: 11px; color: var(--muted); }
+.val {
+  font-family: ui-monospace, Menlo, monospace; display: block;
+  max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ro { color: var(--muted); font-style: italic; font-size: 11px; }
+.name { width: 100%; }
+.selbar {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--accent);
+  border-radius: 8px; padding: 8px 12px; margin-bottom: 10px;
+}
+.empty { padding: 44px 8px; text-align: center; color: var(--muted); }
+.toast {
+  position: fixed; right: 16px; bottom: 16px; background: var(--panel);
+  border: 1px solid var(--line); border-left: 3px solid var(--bad);
+  border-radius: 6px; padding: 10px 14px; max-width: 380px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.2);
+}
+.toast.ok { border-left-color: var(--ok); }
+@media (max-width: 800px) {
+  .layout { flex-direction: column; }
+  .side { width: auto; flex: none; border-right: none;
+          border-bottom: 1px solid var(--line); max-height: 190px; }
+  .hide-narrow { display: none; }
+  .main, .bar, .cores, header { padding-left: 10px; padding-right: 10px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Q-SYS Controls</h1>
+  <div class="sub" id="summary">Connecting…</div>
+</header>
+
+<div class="cores" id="cores"></div>
+
+<div class="bar">
+  <select id="f-core"></select>
+  <select id="f-only">
+    <option value="">Everything</option>
+    <option value="suggested">Has a suggestion</option>
+    <option value="writable">Writable only</option>
+    <option value="named">Named</option>
+    <option value="enabled">Exposed</option>
+  </select>
+  <input class="grow" id="search" placeholder="Search control, name or value…">
+  <span class="spacer"></span>
+  <label style="color:var(--muted);display:inline-flex;gap:6px;align-items:center">
+    <input type="checkbox" id="live" checked> Live
+  </label>
+</div>
+
+<div class="layout">
+  <div class="side" id="components"></div>
+  <div class="main">
+    <div class="selbar" id="selbar" hidden>
+      <b id="sel-count">0 selected</b>
+      <button class="primary" id="sel-expose">Expose with suggested type</button>
+      <button id="sel-hide">Stop exposing</button>
+      <button id="sel-clear">Clear</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28px"><input type="checkbox" id="sel-all"></th>
+          <th>Control</th>
+          <th>Value</th>
+          <th>Name</th>
+          <th>Expose as</th>
+          <th style="width:40px">On</th>
+          <th class="hide-narrow">Set</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" hidden></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// Ingress serves this page under a token path, so every request is relative
+// to wherever the page itself was loaded from.
+const BASE = location.pathname.replace(/\/+$/, "") + "/";
+const api = (path) => BASE + "api/" + path;
+
+const state = {
+  core: "",
+  component: "",
+  controls: new Map(),   // key -> control
+  rows: new Map(),
+  selected: new Set(),
+  byType: {},
+  live: true,
+  pending: false,
+};
+
+const $ = (id) => document.getElementById(id);
+
+function toast(message, ok) {
+  document.querySelectorAll(".toast").forEach((n) => n.remove());
+  const node = document.createElement("div");
+  node.className = "toast" + (ok ? " ok" : "");
+  node.textContent = message;
+  document.body.appendChild(node);
+  setTimeout(() => node.remove(), 5000);
+}
+
+async function call(path, options) {
+  const response = await fetch(api(path), options);
+  if (!response.ok) {
+    // aiohttp puts a raised reason in the status line, and that is the only
+    // place it survives to.
+    throw new Error(response.statusText || ("HTTP " + response.status));
+  }
+  return response.json();
+}
+
+function formatValue(control) {
+  if (control.string) return control.string;
+  if (control.value === null || control.value === undefined) return "—";
+  if (control.type === "Boolean") return control.value ? "true" : "false";
+  return String(control.value);
+}
+
+// -- loading --------------------------------------------------------------
+
+async function loadStatus() {
+  let data;
+  try {
+    data = await call("status");
+  } catch (err) {
+    $("summary").textContent = "Add-on unreachable: " + err.message;
+    return;
+  }
+  $("summary").textContent =
+    data.total_controls + " controls discovered · " +
+    data.exposed_controls + " exposed to Home Assistant";
+
+  const holder = $("cores");
+  holder.replaceChildren();
+  const picker = $("f-core");
+  const chosen = state.core || picker.value;
+  picker.replaceChildren();
+
+  for (const core of data.cores || []) {
+    picker.add(new Option(core.name, core.name));
+    const card = document.createElement("div");
+    card.className = "core";
+    const up = core.logged_on;
+    card.innerHTML =
+      "<b><span class='dot " + (up ? "up" : "down") + "'></span>" +
+      escapeHtml(core.name) + "</b>" +
+      "<div class='meta'>" + escapeHtml(core.platform || "") + " · " +
+      escapeHtml(core.host) + "</div>" +
+      "<div class='meta'>" + escapeHtml(core.design || "no design") + "</div>" +
+      "<div class='meta'>" +
+      (up ? escapeHtml(core.status || "connected")
+          : escapeHtml(core.last_error || "not connected")) +
+      " · " + core.stored_controls + " controls</div>";
+    holder.appendChild(card);
+  }
+
+  if (chosen && [...picker.options].some((o) => o.value === chosen)) {
+    picker.value = chosen;
+  }
+  state.core = picker.value;
+}
+
+async function loadComponents() {
+  let data;
+  try {
+    data = await call("components?core=" + encodeURIComponent(state.core));
+  } catch (err) {
+    return;
+  }
+  const holder = $("components");
+  holder.replaceChildren();
+
+  const all = document.createElement("div");
+  all.className = "comp" + (state.component === "" ? " active" : "");
+  all.innerHTML = "<span class='n'><b>All components</b></span>";
+  all.onclick = () => { state.component = ""; loadControls(); loadComponents(); };
+  holder.appendChild(all);
+
+  for (const component of data.components || []) {
+    const node = document.createElement("div");
+    node.className = "comp" + (state.component === component.name ? " active" : "");
+    node.innerHTML =
+      "<span class='n'>" + escapeHtml(component.name) +
+      "<div class='sub2'>" + escapeHtml(component.type || "") + "</div></span>" +
+      "<span class='c'>" +
+      (component.exposed ? "<b>" + component.exposed + "</b>/" : "") +
+      component.controls + "</span>";
+    node.onclick = () => {
+      state.component = component.name;
+      loadControls();
+      loadComponents();
+    };
+    holder.appendChild(node);
+  }
+}
+
+async function loadControls() {
+  const params = new URLSearchParams({ core: state.core });
+  if (state.component) params.set("component", state.component);
+  const only = $("f-only").value;
+  if (only) params.set("only", only);
+  const search = $("search").value.trim();
+  if (search) params.set("search", search);
+
+  let data;
+  try {
+    data = await call("controls?" + params.toString());
+  } catch (err) {
+    toast("Could not load controls: " + err.message);
+    return;
+  }
+  state.controls.clear();
+  state.rows.clear();
+  for (const control of data.controls) state.controls.set(control.key, control);
+  render(data.truncated);
+}
+
+// -- rendering ------------------------------------------------------------
+
+function render(truncated) {
+  const body = $("rows");
+  const editing = document.activeElement;
+  const editingKey = editing && editing.closest("tr")
+    ? editing.closest("tr").dataset.key : null;
+
+  const fragment = document.createDocumentFragment();
+  for (const control of state.controls.values()) {
+    let row = state.rows.get(control.key);
+    if (!row) { row = buildRow(control); state.rows.set(control.key, row); }
+    if (control.key !== editingKey) updateRow(row, control);
+    fragment.appendChild(row);
+  }
+  body.replaceChildren(fragment);
+
+  const empty = $("empty");
+  empty.hidden = state.controls.size > 0;
+  if (!state.controls.size) {
+    empty.textContent = "Nothing matches those filters.";
+  }
+  if (truncated) {
+    const note = document.createElement("div");
+    note.className = "empty";
+    note.textContent = truncated + " more not shown — narrow the filter.";
+    body.parentElement.after(note);
+  }
+  updateSelectionBar();
+}
+
+function buildRow(control) {
+  const row = document.createElement("tr");
+  row.dataset.key = control.key;
+
+  const cellSel = document.createElement("td");
+  const pick = document.createElement("input");
+  pick.type = "checkbox";
+  pick.checked = state.selected.has(control.key);
+  pick.addEventListener("change", () => {
+    if (pick.checked) state.selected.add(control.key);
+    else state.selected.delete(control.key);
+    updateSelectionBar();
+  });
+  cellSel.appendChild(pick);
+  row.appendChild(cellSel);
+
+  const cellKey = document.createElement("td");
+  cellKey.innerHTML = "<span class='key'></span><div class='sub2'></div>";
+  row.appendChild(cellKey);
+
+  const cellValue = document.createElement("td");
+  cellValue.innerHTML = "<span class='val'></span>";
+  row.appendChild(cellValue);
+
+  const cellName = document.createElement("td");
+  const name = document.createElement("input");
+  name.className = "name";
+  name.placeholder = "unnamed";
+  name.addEventListener("change", () => configure(control, { name: name.value }));
+  cellName.appendChild(name);
+  row.appendChild(cellName);
+
+  const cellPlatform = document.createElement("td");
+  const platform = document.createElement("select");
+  for (const option of control.allowed || []) {
+    platform.add(new Option(option.replace(/_/g, " "), option));
+  }
+  platform.addEventListener("change", () =>
+    configure(control, { platform: platform.value }));
+  cellPlatform.appendChild(platform);
+  row.appendChild(cellPlatform);
+
+  const cellEnabled = document.createElement("td");
+  const enabled = document.createElement("input");
+  enabled.type = "checkbox";
+  enabled.addEventListener("change", () =>
+    configure(control, { enabled: enabled.checked }));
+  cellEnabled.appendChild(enabled);
+  row.appendChild(cellEnabled);
+
+  const cellSet = document.createElement("td");
+  cellSet.className = "hide-narrow";
+  buildSetControls(cellSet, control);
+  row.appendChild(cellSet);
+
+  row._parts = { pick, cellKey, cellValue, name, platform, enabled };
+  return row;
+}
+
+function buildSetControls(cell, control) {
+  if (!control.writable) {
+    cell.innerHTML = "<span class='ro'>read only</span>";
+    return;
+  }
+  if (control.type === "Boolean") {
+    for (const [label, value] of [["On", true], ["Off", false]]) {
+      const button = document.createElement("button");
+      button.textContent = label;
+      button.onclick = () => write(control, { value });
+      cell.appendChild(button);
+    }
+    return;
+  }
+  const field = document.createElement("input");
+  field.style.width = "84px";
+  if (control.min !== null && control.max !== null) {
+    field.type = "number";
+    field.placeholder = control.min + "…" + control.max;
+  } else {
+    field.placeholder = "value";
+  }
+  const send = document.createElement("button");
+  send.textContent = "Set";
+  send.onclick = () => write(control, {
+    value: control.type === "String" ? field.value : Number(field.value),
+  });
+  cell.append(field, send);
+}
+
+function updateRow(row, control) {
+  const parts = row._parts;
+  parts.cellKey.querySelector(".key").textContent = control.control;
+  parts.cellKey.querySelector(".sub2").textContent =
+    control.component + " · " + (control.type || "?");
+
+  const value = parts.cellValue.querySelector(".val");
+  value.textContent = formatValue(control);
+  value.title = String(control.value ?? "");
+
+  if (document.activeElement !== parts.name) {
+    parts.name.value = control.config.name || "";
+  }
+  parts.platform.value = control.platform || "";
+  parts.enabled.checked = !!control.config.enabled;
+  parts.pick.checked = state.selected.has(control.key);
+}
+
+function flash(key) {
+  const row = state.rows.get(key);
+  if (!row || !row.isConnected) return;
+  row.classList.remove("flash");
+  void row.offsetWidth;
+  row.classList.add("flash");
+}
+
+// -- selection ------------------------------------------------------------
+
+function updateSelectionBar() {
+  const count = state.selected.size;
+  $("selbar").hidden = count === 0;
+  $("sel-count").textContent = count + " selected";
+}
+
+async function bulk(payload) {
+  const keys = [...state.selected];
+  if (!keys.length) return;
+  try {
+    const result = await call("controls/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ core: state.core, keys, ...payload }),
+    });
+    let message = result.applied + " updated";
+    if (result.skipped_total) message += ", " + result.skipped_total + " skipped";
+    toast(message, true);
+    state.selected.clear();
+    await loadControls();
+    loadComponents();
+    loadStatus();
+  } catch (err) {
+    toast("Bulk change failed: " + err.message);
+  }
+}
+
+// -- actions --------------------------------------------------------------
+
+async function configure(control, changes) {
+  try {
+    const result = await call("controls/configure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ core: state.core, key: control.key, ...changes }),
+    });
+    Object.assign(control, result.control);
+    const row = state.rows.get(control.key);
+    if (row) updateRow(row, control);
+    if ("enabled" in changes) { loadComponents(); loadStatus(); }
+  } catch (err) {
+    toast("Could not save " + control.key + ": " + err.message);
+    const row = state.rows.get(control.key);
+    if (row) updateRow(row, control);
+  }
+}
+
+async function write(control, payload) {
+  try {
+    await call("controls/set", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ core: state.core, key: control.key, ...payload }),
+    });
+  } catch (err) {
+    toast("Could not set " + control.key + ": " + err.message);
+  }
+}
+
+function escapeHtml(text) {
+  return String(text ?? "").replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+// -- live stream ----------------------------------------------------------
+
+function connectStream() {
+  const stream = new EventSource(api("events"));
+  stream.onmessage = (message) => {
+    if (!state.live) return;
+    const event = JSON.parse(message.data);
+    if (event.core !== state.core) return;
+    const control = state.controls.get(event.key);
+    if (!control) return;   // not in the current view; nothing to draw
+    control.value = event.value;
+    control.string = event.string;
+    control.position = event.position;
+    const row = state.rows.get(event.key);
+    if (row && row.isConnected) {
+      updateRow(row, control);
+      flash(event.key);
+    }
+  };
+  stream.onerror = () => {
+    if (stream.readyState === EventSource.CLOSED) setTimeout(connectStream, 3000);
+  };
+}
+
+// -- wiring ---------------------------------------------------------------
+
+$("f-core").addEventListener("change", () => {
+  state.core = $("f-core").value;
+  state.component = "";
+  state.selected.clear();
+  loadComponents();
+  loadControls();
+});
+$("f-only").addEventListener("change", loadControls);
+let searchTimer;
+$("search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadControls, 250);
+});
+$("live").addEventListener("change", (e) => { state.live = e.target.checked; });
+$("sel-all").addEventListener("change", (e) => {
+  for (const key of state.controls.keys()) {
+    if (e.target.checked) state.selected.add(key);
+    else state.selected.delete(key);
+  }
+  render();
+});
+$("sel-expose").addEventListener("click", () =>
+  bulk({ use_suggested: true, enabled: true }));
+$("sel-hide").addEventListener("click", () => bulk({ enabled: false }));
+$("sel-clear").addEventListener("click", () => {
+  state.selected.clear();
+  render();
+});
+
+(async function start() {
+  await loadStatus();
+  await loadComponents();
+  await loadControls();
+  connectStream();
+  setInterval(loadStatus, 15000);
+})();
+</script>
+</body>
+</html>
