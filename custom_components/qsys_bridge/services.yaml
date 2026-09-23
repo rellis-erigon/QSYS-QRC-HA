@@ -1,0 +1,12 @@
+rescan:
+  name: Re-scan controls
+  description: >-
+    Ask the add-on to re-read controls from the Q-SYS Core. Use this after a
+    change on the core rather than waiting for a reconnect.
+  fields:
+    core:
+      name: Q-SYS Core
+      description: Limit the scan to one core. Omit to scan all of them.
+      required: false
+      selector:
+        text:

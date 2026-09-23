@@ -153,6 +153,7 @@ tr.on .key { color: var(--accent); }
   <label style="color:var(--muted);display:inline-flex;gap:6px;align-items:center">
     <input type="checkbox" id="live" checked> Live
   </label>
+  <button id="rescan" title="Re-read every component and control from the Core. Use after a design is redeployed.">Re-scan Core</button>
 </div>
 
 <div class="layout" id="view-browse">
@@ -736,6 +737,33 @@ $("f-core").addEventListener("change", () => {
   loadComponents();
   loadControls();
 });
+$("rescan").addEventListener("click", async () => {
+  const button = $("rescan");
+  button.disabled = true;
+  button.textContent = "Scanning…";
+  try {
+    const result = await call("rediscover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ core: state.core }),
+    });
+    const outcome = result.cores[state.core] || {};
+    toast(outcome.ok
+      ? `${outcome.controls} controls across ${outcome.components} components`
+        + (outcome.added ? `, ${outcome.added} new` : "")
+        + (outcome.removed ? `, ${outcome.removed} gone` : "")
+      : "Re-scan failed: " + (outcome.error || "unknown"), outcome.ok);
+    await loadStatus();
+    await loadComponents();
+    await loadControls();
+  } catch (err) {
+    toast("Re-scan failed: " + err.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Re-scan Core";
+  }
+});
+
 $("f-only").addEventListener("change", loadControls);
 let searchTimer;
 $("search").addEventListener("input", () => {

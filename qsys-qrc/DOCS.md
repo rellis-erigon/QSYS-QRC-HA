@@ -91,3 +91,16 @@ Rediscovery refreshes what the Core reports — values, ranges, new
 components — and never touches what you decided. Controls that vanish are
 forgotten, except ones you named or exposed: designs are often redeployed in
 pieces, and losing the setup would be worse than a stale row.
+
+## Re-scanning the Core
+
+**Re-scan Core** re-reads every component and control. Use it after a design
+is redeployed: components appear and disappear, and faders get restaged.
+Waiting for a reconnect to notice is no use when someone is standing at the
+panel wondering where their new zone is.
+
+What you decided survives it. Names, devices, areas and exposure are kept;
+only what the Core reports is refreshed — including ranges, because a
+restaged fader with its old limits is worse than useless.
+
+Also available as the `qsys_bridge.rescan` service.

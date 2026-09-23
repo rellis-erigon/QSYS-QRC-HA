@@ -379,3 +379,39 @@ async def test_area_and_device_survive_the_round_trip(client, hub):
     assert row["config"]["area"] == "Function Room 3"
     assert row["config"]["group"] == "Function Room 3"
     assert row["group"] == "Function Room 3"
+
+
+# -- forced rescan -------------------------------------------------------
+
+async def test_rescan_rereads_the_core(client, hub, monkeypatch):
+    called = []
+
+    async def fake(name, conn):
+        called.append(name)
+        hub._on_change(name, _control("Zone 9", "gain"))
+
+    monkeypatch.setattr(hub, "_rediscover", fake)
+    body = await (await client.post("/api/rediscover", json={})).json()
+    assert called == ["Core"]
+    assert body["cores"]["Core"]["ok"] is True
+    assert body["cores"]["Core"]["added"] == 1
+
+
+async def test_rescan_reports_a_core_that_is_not_connected(client, hub):
+    hub.cores["Core"].logged_on = False
+    body = await (await client.post("/api/rediscover", json={})).json()
+    assert body["cores"]["Core"]["ok"] is False
+
+
+async def test_rescan_of_an_unknown_core_is_404(client):
+    response = await client.post("/api/rediscover", json={"core": "nope"})
+    assert response.status == 404
+
+
+async def test_a_failing_rescan_is_reported_not_raised(client, hub, monkeypatch):
+    async def boom(name, conn):
+        raise OSError("core went away")
+
+    monkeypatch.setattr(hub, "_rediscover", boom)
+    body = await (await client.post("/api/rediscover", json={})).json()
+    assert "went away" in body["cores"]["Core"]["error"]

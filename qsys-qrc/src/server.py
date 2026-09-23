@@ -496,6 +496,43 @@ async def groups(request: web.Request) -> web.Response:
     })
 
 
+async def rediscover(request: web.Request) -> web.Response:
+    """Re-read every component and control from the Core.
+
+    Needed after a design is redeployed: components appear, disappear, and
+    faders get restaged. Waiting for a reconnect to notice is no use when
+    someone is standing in front of the panel wondering why their new zone
+    is missing.
+    """
+    hub: Hub = request.app["hub"]
+    body = await request.json() if request.can_read_body else {}
+    wanted = (body.get("core") or "").strip()
+
+    names = [wanted] if wanted else list(hub.cores)
+    if wanted and wanted not in hub.cores:
+        raise web.HTTPNotFound(reason=f"unknown core {wanted}")
+
+    results = {}
+    for name in names:
+        conn = hub.cores[name]
+        if not conn.logged_on:
+            results[name] = {"ok": False, "error": "not connected"}
+            continue
+        before = len(hub.store.for_core(name))
+        try:
+            await hub._rediscover(name, conn)
+        except Exception as err:  # noqa: BLE001 - report, never raise
+            results[name] = {"ok": False, "error": str(err)}
+            continue
+        after = len(hub.store.for_core(name))
+        results[name] = {
+            "ok": True, "controls": after, "added": max(0, after - before),
+            "removed": max(0, before - after),
+            "components": len(conn.components),
+        }
+    return web.json_response({"ok": True, "cores": results})
+
+
 async def platforms(request: web.Request) -> web.Response:
     return web.json_response({
         "platforms": list(VALID_PLATFORMS),
@@ -527,6 +564,7 @@ def build_app(hub: Hub) -> web.Application:
         web.get("/api/areas", areas),
         web.get("/api/groups", groups),
         web.get("/api/controls", list_controls),
+        web.post("/api/rediscover", rediscover),
         web.post("/api/controls/configure", configure_control),
         web.post("/api/controls/bulk", bulk_configure),
         web.post("/api/controls/set", set_control),
