@@ -44,6 +44,12 @@ class QsysControl:
     unit: str = ""
     device_class: str = ""
     use_position: bool = False
+    # Which device this control belongs to, and where that device lives.
+    group: str = ""
+    area: str = ""
+    icon: str = ""
+    entity_category: str = ""
+    precision: int | None = None
     writable: bool = True
     available: bool = True
 
@@ -68,6 +74,11 @@ class QsysControl:
             unit=data.get("unit") or "",
             device_class=data.get("device_class") or "",
             use_position=bool(data.get("use_position")),
+            group=data.get("group") or data.get("component", ""),
+            area=data.get("area") or "",
+            icon=data.get("icon") or "",
+            entity_category=data.get("entity_category") or "",
+            precision=data.get("precision"),
             writable=bool(data.get("writable", True)),
             available=bool(data.get("available", True)),
         )

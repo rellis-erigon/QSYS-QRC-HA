@@ -110,6 +110,7 @@ tr.flash { animation: flash 1s ease-out; }
 </header>
 
 <div class="cores" id="cores"></div>
+<datalist id="area-options"></datalist>
 
 <div class="bar">
   <select id="f-core"></select>
@@ -134,6 +135,12 @@ tr.flash { animation: flash 1s ease-out; }
       <b id="sel-count">0 selected</b>
       <button class="primary" id="sel-expose">Expose with suggested type</button>
       <button id="sel-hide">Stop exposing</button>
+      <span style="width:1px;height:20px;background:var(--line)"></span>
+      <input id="sel-area" list="area-options" placeholder="Area…" style="width:150px">
+      <button id="sel-area-apply">Set area</button>
+      <input id="sel-group" placeholder="Device name…" style="width:150px">
+      <button id="sel-group-apply">Set device</button>
+      <span style="width:1px;height:20px;background:var(--line)"></span>
       <button id="sel-clear">Clear</button>
     </div>
     <table>
@@ -143,6 +150,8 @@ tr.flash { animation: flash 1s ease-out; }
           <th>Control</th>
           <th>Value</th>
           <th>Name</th>
+          <th class="hide-narrow">Device</th>
+          <th class="hide-narrow">Area</th>
           <th>Expose as</th>
           <th style="width:40px">On</th>
           <th class="hide-narrow">Set</th>
@@ -169,6 +178,7 @@ const state = {
   rows: new Map(),
   selected: new Set(),
   byType: {},
+  areas: [],
   live: true,
   pending: false,
 };
@@ -243,6 +253,18 @@ async function loadStatus() {
     picker.value = chosen;
   }
   state.core = picker.value;
+}
+
+async function loadAreas() {
+  try {
+    const data = await call("areas");
+    state.areas = data.areas || [];
+  } catch (err) {
+    state.areas = [];
+  }
+  const list = $("area-options");
+  list.replaceChildren();
+  for (const area of state.areas) list.appendChild(new Option(area));
 }
 
 async function loadComponents() {
@@ -363,6 +385,29 @@ function buildRow(control) {
   cellName.appendChild(name);
   row.appendChild(cellName);
 
+  const cellGroup = document.createElement("td");
+  cellGroup.className = "hide-narrow";
+  const group = document.createElement("input");
+  group.style.width = "120px";
+  group.placeholder = control.component;
+  group.title = "Which Home Assistant device this control belongs to";
+  group.addEventListener("change", () =>
+    configure(control, { group: group.value }));
+  cellGroup.appendChild(group);
+  row.appendChild(cellGroup);
+
+  const cellArea = document.createElement("td");
+  cellArea.className = "hide-narrow";
+  const area = document.createElement("input");
+  area.style.width = "120px";
+  area.setAttribute("list", "area-options");
+  area.placeholder = "—";
+  area.title = "Home Assistant area. A new name creates the area.";
+  area.addEventListener("change", () =>
+    configure(control, { area: area.value }));
+  cellArea.appendChild(area);
+  row.appendChild(cellArea);
+
   const cellPlatform = document.createElement("td");
   const platform = document.createElement("select");
   for (const option of control.allowed || []) {
@@ -386,7 +431,7 @@ function buildRow(control) {
   buildSetControls(cellSet, control);
   row.appendChild(cellSet);
 
-  row._parts = { pick, cellKey, cellValue, name, platform, enabled };
+  row._parts = { pick, cellKey, cellValue, name, group, area, platform, enabled };
   return row;
 }
 
@@ -432,6 +477,14 @@ function updateRow(row, control) {
 
   if (document.activeElement !== parts.name) {
     parts.name.value = control.config.name || "";
+  }
+  if (document.activeElement !== parts.group) {
+    // Show the effective device, but leave the box empty when it is just
+    // the component, so clearing it falls back rather than pinning.
+    parts.group.value = control.config.group || "";
+  }
+  if (document.activeElement !== parts.area) {
+    parts.area.value = control.config.area || "";
   }
   parts.platform.value = control.platform || "";
   parts.enabled.checked = !!control.config.enabled;
@@ -562,6 +615,12 @@ $("sel-all").addEventListener("change", (e) => {
 $("sel-expose").addEventListener("click", () =>
   bulk({ use_suggested: true, enabled: true }));
 $("sel-hide").addEventListener("click", () => bulk({ enabled: false }));
+$("sel-area-apply").addEventListener("click", async () => {
+  await bulk({ area: $("sel-area").value.trim() });
+  loadAreas();
+});
+$("sel-group-apply").addEventListener("click", () =>
+  bulk({ group: $("sel-group").value.trim() }));
 $("sel-clear").addEventListener("click", () => {
   state.selected.clear();
   render();
@@ -569,6 +628,7 @@ $("sel-clear").addEventListener("click", () => {
 
 (async function start() {
   await loadStatus();
+  await loadAreas();
   await loadComponents();
   await loadControls();
   connectStream();

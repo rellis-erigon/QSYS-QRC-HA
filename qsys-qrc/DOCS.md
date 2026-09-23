@@ -44,6 +44,38 @@ exposed. Subscribing to all three hundred controls of a design in order to
 follow the fifty you care about would put a continuously changing audio
 meter on the wire for no reason.
 
+## Devices and areas
+
+Two settings decide where a control lands in Home Assistant.
+
+**Device** is which Home Assistant device the control belongs to. It
+defaults to the Q-SYS component, which is right until it is not: one `Mixer`
+component carries the outputs for every room in a building, and those
+outputs belong in the rooms rather than in a device called Mixer. Set the
+device name on `output.3.gain` and `output.3.mute` to "Function Room 3" and
+they become one device.
+
+**Area** is the Home Assistant area that device sits in. Existing areas are
+offered for reuse; typing a new name creates it. It is passed as a
+*suggestion*, so Home Assistant will not override a device you have already
+placed by hand.
+
+A device takes its area from the first control in it that names one, so
+assigning the area once is enough to move the whole thing.
+
+Both can be set in bulk. Select every control for a room, type the area
+once, and press **Set area**.
+
+## Presentation
+
+| Setting | What it does |
+|---------|--------------|
+| Name | What the entity is called. Defaults to the component and control. |
+| Icon | Any `mdi:` icon. |
+| Category | `config` or `diagnostic` moves the entity out of a device's main view, which is where a threshold or a setup flag belongs. |
+| Precision | Decimal places shown. A fader reporting -30.39999961 does not need eight. |
+| Unit | Overrides the unit Q-SYS reports, for the rare case it reports none. |
+
 ## Faders and position
 
 A number entity takes its range from the Core, so a fader staged to

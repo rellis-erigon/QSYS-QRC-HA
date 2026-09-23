@@ -38,6 +38,16 @@ Controls that configure the DSP rather than operate it — `invert`, `bypass`,
 `pre.post` — get no suggestion. Polarity inversion does not belong beside a
 volume slider.
 
+## Devices and areas
+
+A control's **device** defaults to its Q-SYS component and can be changed,
+because components do not always match rooms — one `Mixer` carries the
+outputs for an entire building. Its **area** is offered from the areas Home
+Assistant already has, and a new name creates one.
+
+Both can be assigned to a whole selection at once, which is the only
+practical way to place three hundred controls.
+
 ## Faders
 
 A number entity takes the Core's own staging as its range, so a fader

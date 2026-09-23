@@ -37,6 +37,11 @@ class QsysSensor(QsysEntity, SensorEntity):
         return control.unit or None
 
     @property
+    def suggested_display_precision(self) -> int | None:
+        control = self.control
+        return control.precision if control else None
+
+    @property
     def device_class(self):
         control = self.control
         return (control.device_class or None) if control else None

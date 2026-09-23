@@ -1,6 +1,7 @@
 """Base entity for the Q-SYS Bridge integration."""
 from __future__ import annotations
 
+from homeassistant.const import EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -20,16 +21,30 @@ class QsysEntity(CoordinatorEntity[QsysCoordinator]):
         # so removing and re-adding the integration keeps the same entities.
         self._attr_unique_id = f"{DOMAIN}_{control.core}_{control.key}"
         self._attr_name = control.name
-        # A device per component rather than per Core: a design has dozens of
+        if control.icon:
+            self._attr_icon = control.icon
+        if control.entity_category:
+            self._attr_entity_category = EntityCategory(control.entity_category)
+
+        # A device per group rather than per Core: a design has dozens of
         # components, and one device holding three hundred entities is not
-        # something anyone can navigate.
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{control.core}_{control.component}")},
-            name=f"{control.core} {control.component}",
+        # something anyone can navigate. The group defaults to the component
+        # but does not have to be it — one Mixer carries the outputs for
+        # every room in a building, and those belong in the rooms.
+        group = control.group or control.component
+        device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{control.core}_{group}")},
+            name=group,
             manufacturer="QSC",
-            model="Q-SYS component",
+            model="Q-SYS",
             via_device=(DOMAIN, control.core),
         )
+        if control.area:
+            # A suggestion rather than an assignment: Home Assistant creates
+            # the area if it is new, and never overrides a device someone
+            # has already placed by hand.
+            device_info["suggested_area"] = control.area
+        self._attr_device_info = device_info
 
     @property
     def control(self) -> QsysControl | None:

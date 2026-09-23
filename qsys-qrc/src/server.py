@@ -19,7 +19,8 @@ from pathlib import Path
 from aiohttp import web
 
 from control_store import (
-    PLATFORMS_FOR_TYPE, VALID_PLATFORMS, ControlStore, allowed_platforms,
+    PLATFORMS_FOR_TYPE, VALID_CATEGORIES, VALID_PLATFORMS, ControlStore,
+    allowed_platforms, areas_in_use, groups_in_use,
 )
 from qrc_client import QrcConnection, QrcError, suggest_platform
 
@@ -283,8 +284,26 @@ async def list_controls(request: web.Request) -> web.Response:
 
 _CONFIG_FIELDS = (
     "name", "platform", "enabled", "unit", "device_class", "use_position",
-    "notes",
+    "group", "area", "icon", "entity_category", "precision", "notes",
 )
+
+# Home Assistant's own area list, read straight from its registry. Only used
+# to offer existing names for reuse — a new name is passed to Home Assistant
+# as a suggestion and the area gets created, so this is convenience rather
+# than a constraint.
+AREA_REGISTRY = Path("/config/.storage/core.area_registry")
+
+
+def _known_areas() -> list[str]:
+    try:
+        data = json.loads(AREA_REGISTRY.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    entries = (data.get("data") or {}).get("areas") or []
+    return sorted(
+        {a.get("name", "") for a in entries if a.get("name")},
+        key=str.casefold,
+    )
 
 
 async def configure_control(request: web.Request) -> web.Response:
@@ -421,6 +440,11 @@ async def integration_controls(request: web.Request) -> web.Response:
                 "key": c.key,
                 "component": c.component,
                 "control": c.control,
+                "group": c.config.resolved_group(c.component),
+                "area": c.config.area,
+                "icon": c.config.icon,
+                "entity_category": c.config.entity_category,
+                "precision": c.config.precision,
                 "platform": c.config.resolved_platform(c.suggested),
                 "name": c.config.name or f"{c.component} {c.control}",
                 "value": c.value,
@@ -446,6 +470,31 @@ async def integration_controls(request: web.Request) -> web.Response:
             }
             for name, conn in hub.cores.items()
         },
+    })
+
+
+async def areas(request: web.Request) -> web.Response:
+    """Areas to choose from: Home Assistant's, plus any already assigned."""
+    hub: Hub = request.app["hub"]
+    assigned = areas_in_use(list(hub.store.controls.values()))
+    known = _known_areas()
+    return web.json_response({
+        "areas": sorted(set(known) | set(assigned), key=str.casefold),
+        "from_home_assistant": known,
+        "in_use": assigned,
+        "categories": list(VALID_CATEGORIES),
+    })
+
+
+async def groups(request: web.Request) -> web.Response:
+    """Devices as they will appear in Home Assistant."""
+    hub: Hub = request.app["hub"]
+    core = request.query.get("core", "")
+    controls = hub.store.for_core(core) if core else list(hub.store.controls.values())
+    return web.json_response({
+        "groups": sorted(
+            groups_in_use(controls).values(), key=lambda g: g["name"].casefold()
+        ),
     })
 
 
@@ -477,6 +526,8 @@ def build_app(hub: Hub) -> web.Application:
         web.get("/api/status", status),
         web.get("/api/platforms", platforms),
         web.get("/api/components", components),
+        web.get("/api/areas", areas),
+        web.get("/api/groups", groups),
         web.get("/api/controls", list_controls),
         web.post("/api/controls/configure", configure_control),
         web.post("/api/controls/bulk", bulk_configure),

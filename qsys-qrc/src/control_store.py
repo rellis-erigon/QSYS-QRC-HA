@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +55,12 @@ READ_ONLY_PLATFORMS = frozenset({
 })
 
 
+# Where an entity belongs in Home Assistant's own hierarchy. Diagnostic and
+# config controls are hidden from a device's main view, which is exactly
+# where a threshold or a setup flag should live.
+VALID_CATEGORIES = ("", "config", "diagnostic")
+
+
 @dataclass
 class ControlConfig:
     """What the user decided about one control."""
@@ -67,10 +73,24 @@ class ControlConfig:
     # A fader's dB scale is not linear, so driving it by normalised position
     # gives a slider that behaves the way a person expects.
     use_position: bool = False
+    # Which Home Assistant device this control belongs to. Defaults to the
+    # component, which is right until it is not: one Mixer component carries
+    # the outputs for every room in a building, and those belong in the
+    # rooms rather than in a device called "Mixer".
+    group: str = ""
+    # The Home Assistant area. Passed as a suggestion, so Home Assistant
+    # creates the area if it does not exist yet.
+    area: str = ""
+    icon: str = ""
+    entity_category: str = ""
+    precision: int | None = None
     notes: str = ""
 
     def resolved_platform(self, suggested: str | None) -> str:
         return self.platform or suggested or PLATFORM_SENSOR
+
+    def resolved_group(self, component: str) -> str:
+        return self.group or component
 
 
 @dataclass
@@ -111,6 +131,7 @@ class StoredControl:
         data["key"] = self.key
         data["writable"] = self.writable
         data["platform"] = self.config.resolved_platform(self.suggested)
+        data["group"] = self.config.resolved_group(self.component)
         return data
 
 
@@ -141,16 +162,23 @@ class ControlStore:
             logger.warning("Could not read %s: %s", self.path, err)
             return 0
 
+        # to_dict() emits derived fields as well as stored ones, so filter
+        # to what the dataclass actually accepts. Keeping a list of keys to
+        # strip in sync with to_dict() is a bug waiting to happen, and was
+        # one: adding "group" silently stopped the store reloading.
+        stored_fields = {f.name for f in fields(StoredControl)} - {"config"}
+        config_fields = {f.name for f in fields(ControlConfig)}
+
         for store_key, data in (raw.get("controls") or {}).items():
-            config = ControlConfig(**(data.pop("config", None) or {}))
-            data.pop("key", None)
-            data.pop("writable", None)
-            data.pop("platform", None)
+            raw_config = data.get("config") or {}
+            config = ControlConfig(**{
+                k: v for k, v in raw_config.items() if k in config_fields
+            })
             try:
-                self.controls[store_key] = StoredControl(config=config, **data)
+                self.controls[store_key] = StoredControl(config=config, **{
+                    k: v for k, v in data.items() if k in stored_fields
+                })
             except TypeError as err:
-                # A store written by a newer version. Skipping one row beats
-                # refusing to start.
                 logger.debug("Skipping %s: %s", store_key, err)
         logger.info("Loaded %d controls", len(self.controls))
         return len(self.controls)
@@ -229,7 +257,27 @@ class ControlStore:
                 )
             entry.config.platform = platform
 
-        for field_name in ("name", "unit", "device_class", "notes"):
+        if "entity_category" in changes:
+            category = (changes["entity_category"] or "").strip()
+            if category not in VALID_CATEGORIES:
+                raise ValueError(
+                    f"unknown entity category {category!r}; "
+                    f"choose one of {', '.join(c or '(none)' for c in VALID_CATEGORIES)}"
+                )
+            entry.config.entity_category = category
+
+        if "precision" in changes:
+            value = changes["precision"]
+            if value in (None, ""):
+                entry.config.precision = None
+            else:
+                try:
+                    entry.config.precision = max(0, min(6, int(value)))
+                except (TypeError, ValueError):
+                    raise ValueError(f"precision must be a whole number, got {value!r}")
+
+        for field_name in ("name", "unit", "device_class", "group", "area",
+                           "icon", "notes"):
             if field_name in changes:
                 setattr(entry.config, field_name,
                         str(changes[field_name]).strip())
@@ -296,3 +344,28 @@ class ControlStore:
             self._dirty = True
             logger.info("Forgot %d controls no longer in the design", removed)
         return removed
+
+
+def areas_in_use(controls: list[StoredControl]) -> list[str]:
+    """Every area already assigned, so the UI can offer them again."""
+    return sorted({c.config.area for c in controls if c.config.area})
+
+
+def groups_in_use(controls: list[StoredControl]) -> dict[str, dict]:
+    """Devices as they will appear, with the area each one resolves to.
+
+    A group takes its area from the first control in it that names one, so
+    assigning the area once is enough to move the whole device.
+    """
+    groups: dict[str, dict] = {}
+    for control in controls:
+        name = control.config.resolved_group(control.component)
+        entry = groups.setdefault(
+            name, {"name": name, "area": "", "controls": 0, "exposed": 0}
+        )
+        entry["controls"] += 1
+        if control.config.enabled:
+            entry["exposed"] += 1
+        if not entry["area"] and control.config.area:
+            entry["area"] = control.config.area
+    return groups

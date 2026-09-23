@@ -183,13 +183,17 @@ def test_a_corrupt_store_does_not_stop_startup(tmp_path):
     assert ControlStore(path).load() == 0
 
 
-def test_a_row_from_a_newer_version_is_skipped_not_fatal(tmp_path):
+def test_a_field_from_a_newer_version_is_ignored_not_fatal(tmp_path):
+    """Forward compatibility: keep the row, drop the field we do not know."""
     path = tmp_path / "controls.json"
     path.write_text(json.dumps({"version": 2, "controls": {
         "Core/A/b": {"core": "Core", "component": "A", "control": "b",
-                     "future_field": 1},
+                     "future_field": 1,
+                     "config": {"name": "Kept", "future_setting": True}},
     }}))
-    assert ControlStore(path).load() == 0
+    s = ControlStore(path)
+    assert s.load() == 1
+    assert s.controls["Core/A/b"].config.name == "Kept"
 
 
 def test_save_if_dirty_only_writes_when_something_changed(tmp_path):
@@ -233,3 +237,94 @@ def test_components_are_counted_per_core(tmp_path):
     gain(s, component="Zone 2")
     meter(s)
     assert s.components("Core") == {"Zone 1": 1, "Zone 2": 1, "Meter": 1}
+
+
+# -- grouping and areas --------------------------------------------------
+
+def test_a_control_belongs_to_its_component_until_told_otherwise(tmp_path):
+    s = store(tmp_path)
+    control = gain(s)
+    assert control.config.resolved_group("Zone 1") == "Zone 1"
+    assert control.to_dict()["group"] == "Zone 1"
+
+
+def test_a_group_moves_a_control_to_another_device(tmp_path):
+    """One Mixer carries the outputs for every room in a building."""
+    s = store(tmp_path)
+    s.observe("Core", "Mixer", "output.3.gain", type="Float", suggested="number")
+    s.configure("Core", "Mixer/output.3.gain", group="Function Room 3",
+                area="Function Room 3")
+    control = s.controls["Core/Mixer/output.3.gain"]
+    assert control.to_dict()["group"] == "Function Room 3"
+    assert control.config.area == "Function Room 3"
+
+
+def test_clearing_a_group_falls_back_to_the_component(tmp_path):
+    s = store(tmp_path)
+    gain(s)
+    s.configure("Core", "Zone 1/gain", group="Somewhere")
+    s.configure("Core", "Zone 1/gain", group="")
+    assert s.controls["Core/Zone 1/gain"].to_dict()["group"] == "Zone 1"
+
+
+def test_areas_in_use_lists_each_one_once(tmp_path):
+    from control_store import areas_in_use
+
+    s = store(tmp_path)
+    gain(s, component="Zone 1")
+    gain(s, component="Zone 2")
+    s.configure("Core", "Zone 1/gain", area="Bar")
+    s.configure("Core", "Zone 2/gain", area="Bar")
+    assert areas_in_use(list(s.controls.values())) == ["Bar"]
+
+
+def test_a_group_takes_its_area_from_the_first_control_that_names_one(tmp_path):
+    """Assigning the area once is enough to move the whole device."""
+    from control_store import groups_in_use
+
+    s = store(tmp_path)
+    s.observe("Core", "Mixer", "output.3.gain", type="Float")
+    s.observe("Core", "Mixer", "output.3.mute", type="Boolean")
+    s.configure("Core", "Mixer/output.3.gain", group="Room 3", area="Room 3")
+    s.configure("Core", "Mixer/output.3.mute", group="Room 3", enabled=True)
+
+    groups = groups_in_use(list(s.controls.values()))
+    assert groups["Room 3"]["area"] == "Room 3"
+    assert groups["Room 3"]["controls"] == 2
+    assert groups["Room 3"]["exposed"] == 1
+
+
+def test_entity_category_is_validated(tmp_path):
+    s = store(tmp_path)
+    gain(s)
+    s.configure("Core", "Zone 1/gain", entity_category="diagnostic")
+    assert s.controls["Core/Zone 1/gain"].config.entity_category == "diagnostic"
+    with pytest.raises(ValueError, match="unknown entity category"):
+        s.configure("Core", "Zone 1/gain", entity_category="somewhere")
+
+
+def test_precision_is_clamped_to_something_sensible(tmp_path):
+    s = store(tmp_path)
+    gain(s)
+    s.configure("Core", "Zone 1/gain", precision=99)
+    assert s.controls["Core/Zone 1/gain"].config.precision == 6
+    s.configure("Core", "Zone 1/gain", precision="")
+    assert s.controls["Core/Zone 1/gain"].config.precision is None
+    with pytest.raises(ValueError, match="whole number"):
+        s.configure("Core", "Zone 1/gain", precision="loud")
+
+
+def test_grouping_and_areas_survive_a_reload(tmp_path):
+    s = store(tmp_path)
+    gain(s)
+    s.configure("Core", "Zone 1/gain", group="Bar", area="Bar",
+                icon="mdi:volume-high", entity_category="config", precision=1)
+    s.save()
+
+    fresh = ControlStore(tmp_path / "controls.json")
+    fresh.load()
+    config = fresh.controls["Core/Zone 1/gain"].config
+    assert (config.group, config.area) == ("Bar", "Bar")
+    assert config.icon == "mdi:volume-high"
+    assert config.entity_category == "config"
+    assert config.precision == 1

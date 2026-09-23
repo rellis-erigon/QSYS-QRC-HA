@@ -53,6 +53,11 @@ class QsysNumber(QsysEntity, NumberEntity):
             return None
 
     @property
+    def suggested_display_precision(self) -> int | None:
+        control = self.control
+        return control.precision if control else None
+
+    @property
     def native_unit_of_measurement(self) -> str | None:
         control = self.control
         return (control.unit or None) if control else None

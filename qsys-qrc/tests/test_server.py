@@ -291,3 +291,64 @@ async def test_any_non_api_path_serves_the_panel(client):
     for path in ("/", "//", "/anything"):
         assert (await client.get(path)).status in (200, 404)
     assert (await client.get("/api/nope")).status == 404
+
+
+# -- areas and grouping --------------------------------------------------
+
+async def test_areas_combine_home_assistant_s_with_those_in_use(client, hub, monkeypatch, tmp_path):
+    import server
+
+    registry = tmp_path / "core.area_registry"
+    registry.write_text(json.dumps(
+        {"data": {"areas": [{"name": "Lobby"}, {"name": "Bar"}]}}))
+    monkeypatch.setattr(server, "AREA_REGISTRY", registry)
+
+    hub.store.configure("Core", "Zone 1/gain", area="Function Room 3")
+    body = await (await client.get("/api/areas")).json()
+    assert body["areas"] == ["Bar", "Function Room 3", "Lobby"]
+    assert body["in_use"] == ["Function Room 3"]
+
+
+async def test_a_missing_area_registry_is_not_fatal(client, monkeypatch):
+    import server
+    monkeypatch.setattr(server, "AREA_REGISTRY", Path("/nonexistent"))
+    body = await (await client.get("/api/areas")).json()
+    assert body["from_home_assistant"] == []
+
+
+async def test_groups_show_the_devices_that_will_appear(client, hub):
+    hub.store.configure("Core", "Zone 1/gain", group="Bar", area="Bar",
+                        enabled=True)
+    hub.store.configure("Core", "Zone 1/mute", group="Bar")
+    body = await (await client.get("/api/groups?core=Core")).json()
+    bar = next(g for g in body["groups"] if g["name"] == "Bar")
+    assert bar["controls"] == 2 and bar["exposed"] == 1 and bar["area"] == "Bar"
+    # The meter was never regrouped, so it stays under its component.
+    assert any(g["name"] == "Meter" for g in body["groups"])
+
+
+async def test_bulk_can_assign_an_area_to_a_selection(client, hub):
+    response = await client.post("/api/controls/bulk", json={
+        "core": "Core", "keys": ["Zone 1/gain", "Zone 1/mute"],
+        "area": "Function Room 3", "group": "Function Room 3",
+    })
+    assert (await response.json())["applied"] == 2
+    assert hub.store.controls["Core/Zone 1/mute"].config.area == "Function Room 3"
+
+
+async def test_the_feed_carries_group_area_and_presentation(client, hub):
+    hub.store.configure("Core", "Zone 1/gain", enabled=True, group="Bar",
+                        area="Bar", icon="mdi:volume-high",
+                        entity_category="config", precision=1)
+    body = await (await client.get("/api/integration/controls")).json()
+    entry = body["controls"][0]
+    assert entry["group"] == "Bar" and entry["area"] == "Bar"
+    assert entry["icon"] == "mdi:volume-high"
+    assert entry["entity_category"] == "config"
+    assert entry["precision"] == 1
+
+
+async def test_a_control_with_no_group_reports_its_component(client, hub):
+    hub.store.configure("Core", "Zone 1/gain", enabled=True)
+    body = await (await client.get("/api/integration/controls")).json()
+    assert body["controls"][0]["group"] == "Zone 1"
