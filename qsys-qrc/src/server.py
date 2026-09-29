@@ -482,7 +482,10 @@ async def zone_card(request: web.Request) -> web.Response:
     raw = request.query.get("groups", "")
     chosen = [g.strip() for g in raw.split(",") if g.strip()] if raw else None
     controls = list(hub.store.controls.values())
-    card, omitted = build_zone_card(controls, chosen)
+    card, omitted = build_zone_card(
+        controls, chosen,
+        title=next(iter(hub.cores), "") or "Audio Zones",
+    )
     if card is None:
         return web.json_response(
             {"error": "no exposed zones — a zone needs a gain control"},

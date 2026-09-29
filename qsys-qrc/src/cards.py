@@ -25,13 +25,19 @@ _MUTE = re.compile(r"^(mute|muted)$", re.I)
 
 
 def _role_controls(controls: Iterable[Any]) -> dict[str, dict[str, Any]]:
-    """Group exposed controls by device, keeping the level and the mute."""
+    """The zones, keyed by component, with their level and mute.
+
+    Keyed on the **component**, not on the Home Assistant device group.
+    One Q-SYS mixer routinely carries the outputs for a whole building —
+    here a single "Public-Area-Mixer" group holds sixteen of them — so
+    grouping by device collapsed sixteen zones into one strip showing the
+    first zone's fader and nothing else.
+    """
     zones: dict[str, dict[str, Any]] = {}
     for control in controls:
         if not control.config.enabled:
             continue
-        group = control.config.resolved_group(control.component)
-        entry = zones.setdefault(group, {})
+        entry = zones.setdefault(control.component, {})
         if _LEVEL.match(control.control) and "level" not in entry:
             entry["level"] = control
         elif _MUTE.match(control.control) and "mute" not in entry:
@@ -41,8 +47,19 @@ def _role_controls(controls: Iterable[Any]) -> dict[str, dict[str, Any]]:
     return {name: e for name, e in zones.items() if "level" in e}
 
 
+def _label_for(control: Any, component: str) -> str:
+    """What to print on the strip.
+
+    The name someone gave the control is usually "Volume", which is no
+    use as a strip label when every strip has one — so the component is
+    preferred unless the group is more specific than both.
+    """
+    return component
+
+
 def zone_card(
     controls: Iterable[Any], groups: list[str] | None = None,
+    title: str = "",
 ) -> tuple[dict, list[str]] | tuple[None, list[str]]:
     """The card for a set of zones, and the zones that would not fit.
 
@@ -61,16 +78,17 @@ def zone_card(
 
     entities: dict[str, str] = {}
     labels: dict[str, str] = {}
-    for index, group in enumerate(chosen, start=1):
-        entry = zones[group]
+    for index, component in enumerate(chosen, start=1):
+        entry = zones[component]
         entities[f"zone{index}_volume"] = entry["level"].key
         if "mute" in entry:
             entities[f"zone{index}_mute"] = entry["mute"].key
-        labels[f"zone{index}"] = group
+        labels[f"zone{index}"] = _label_for(entry["level"], component)
 
     return {
         "type": CARD_TYPE,
         "faceplate": FACEPLATE,
+        "title": title or "Audio Zones",
         "options": {"zones": len(chosen)},
         "labels": labels,
         "entities": entities,
@@ -78,5 +96,5 @@ def zone_card(
 
 
 def zone_groups(controls: Iterable[Any]) -> list[str]:
-    """The devices that could appear on a zone card, for the picker."""
+    """The components that could appear on a zone card, for the picker."""
     return sorted(_role_controls(controls), key=str.casefold)

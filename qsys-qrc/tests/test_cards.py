@@ -8,10 +8,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import cards  # noqa: E402
 
 
-def control(group, name, key, enabled=True):
-    stored = types.SimpleNamespace(component=group, control=name, key=key)
+def control(component, name, key, enabled=True, group=None):
+    stored = types.SimpleNamespace(component=component, control=name, key=key)
     stored.config = types.SimpleNamespace(
-        enabled=enabled, resolved_group=lambda c, g=group: g)
+        enabled=enabled, resolved_group=lambda c, g=group or component: g)
     return stored
 
 
@@ -73,3 +73,21 @@ def test_the_rack_is_capped_and_says_what_it_dropped():
 def test_volume_spelling_is_matched_too():
     card, omitted = cards.zone_card([control("A", "Volume", "k1")])
     assert card["entities"]["zone1_volume"] == "k1"
+
+
+def test_one_mixer_holding_many_zones_is_many_strips():
+    """A Q-SYS mixer routinely carries a whole building's outputs. Keying
+    strips on the Home Assistant device collapsed sixteen zones here into
+    one strip showing the first fader and nothing else."""
+    controls = []
+    for n in range(1, 5):
+        controls.append(control(f"Zone {n}", "gain", f"g{n}", group="Public-Area-Mixer"))
+        controls.append(control(f"Zone {n}", "mute", f"m{n}", group="Public-Area-Mixer"))
+
+    card, _ = cards.zone_card(controls)
+    assert card["options"] == {"zones": 4}
+    assert card["labels"] == {
+        "zone1": "Zone 1", "zone2": "Zone 2",
+        "zone3": "Zone 3", "zone4": "Zone 4",
+    }
+    assert card["entities"]["zone4_volume"] == "g4"
