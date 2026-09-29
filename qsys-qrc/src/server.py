@@ -19,6 +19,7 @@ from pathlib import Path
 
 from aiohttp import web
 
+from cards import zone_card as build_zone_card, zone_groups
 from control_store import (
     PLATFORMS_FOR_TYPE, VALID_CATEGORIES, VALID_PLATFORMS, ControlStore,
     allowed_platforms, areas_in_use, groups_in_use,
@@ -471,6 +472,29 @@ async def integration_controls(request: web.Request) -> web.Response:
     })
 
 
+async def zone_card(request: web.Request) -> web.Response:
+    """The zone-rack card, with control keys where entity ids will go.
+
+    `groups` picks and orders the strips; omitting it takes every zone the
+    Core exposes, alphabetically.
+    """
+    hub: Hub = request.app["hub"]
+    raw = request.query.get("groups", "")
+    chosen = [g.strip() for g in raw.split(",") if g.strip()] if raw else None
+    controls = list(hub.store.controls.values())
+    card = build_zone_card(controls, chosen)
+    if card is None:
+        return web.json_response(
+            {"error": "no exposed zones — a zone needs a gain control"},
+            status=404,
+        )
+    return web.json_response({
+        "card": card,
+        "keys": sorted(set(card["entities"].values())),
+        "available_groups": zone_groups(controls),
+    })
+
+
 async def areas(request: web.Request) -> web.Response:
     """Areas to choose from: Home Assistant's, plus any already assigned."""
     hub: Hub = request.app["hub"]
@@ -563,6 +587,7 @@ def build_app(hub: Hub) -> web.Application:
         web.get("/api/components", components),
         web.get("/api/areas", areas),
         web.get("/api/groups", groups),
+        web.get("/api/cards/zones", zone_card),
         web.get("/api/controls", list_controls),
         web.post("/api/rediscover", rediscover),
         web.post("/api/controls/configure", configure_control),

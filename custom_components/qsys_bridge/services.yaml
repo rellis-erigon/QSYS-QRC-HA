@@ -10,3 +10,18 @@ rescan:
       required: false
       selector:
         text:
+
+generate_zone_card:
+  name: Generate zone card
+  description: >-
+    Build an audio-zone-card for the zones this Core exposes, with each
+    strip bound to its own level and mute. Returns the card and its YAML.
+  fields:
+    groups:
+      name: Zones
+      description: >-
+        Which devices to include, in the order you want the strips. Omit to
+        include every exposed zone.
+      required: false
+      selector:
+        object:
