@@ -41,16 +41,23 @@ def _role_controls(controls: Iterable[Any]) -> dict[str, dict[str, Any]]:
     return {name: e for name, e in zones.items() if "level" in e}
 
 
-def zone_card(controls: Iterable[Any], groups: list[str] | None = None) -> dict | None:
-    """The card for a set of zones, or None if there are none to draw."""
+def zone_card(
+    controls: Iterable[Any], groups: list[str] | None = None,
+) -> tuple[dict, list[str]] | tuple[None, list[str]]:
+    """The card for a set of zones, and the zones that would not fit.
+
+    The faceplate draws at most MAX_ZONES strips. Truncating quietly would
+    hand back a card that looks complete while leaving zones off the wall,
+    so what was dropped comes back with it.
+    """
     zones = _role_controls(controls)
     if groups:
-        chosen = [g for g in groups if g in zones]
+        wanted = [g for g in groups if g in zones]
     else:
-        chosen = sorted(zones, key=str.casefold)
-    chosen = chosen[:MAX_ZONES]
+        wanted = sorted(zones, key=str.casefold)
+    chosen, omitted = wanted[:MAX_ZONES], wanted[MAX_ZONES:]
     if not chosen:
-        return None
+        return None, omitted
 
     entities: dict[str, str] = {}
     labels: dict[str, str] = {}
@@ -67,7 +74,7 @@ def zone_card(controls: Iterable[Any], groups: list[str] | None = None) -> dict 
         "options": {"zones": len(chosen)},
         "labels": labels,
         "entities": entities,
-    }
+    }, omitted
 
 
 def zone_groups(controls: Iterable[Any]) -> list[str]:

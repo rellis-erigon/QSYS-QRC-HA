@@ -128,6 +128,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 allow_unicode=True, width=10000,
             ),
             "unresolved_roles": sorted(missing),
+            "omitted_zones": payload.get("omitted_groups", []),
             "cores": sorted(getattr(coordinator, "cores", {}) or {}),
         }
 

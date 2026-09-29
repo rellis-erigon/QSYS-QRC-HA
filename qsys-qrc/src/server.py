@@ -482,7 +482,7 @@ async def zone_card(request: web.Request) -> web.Response:
     raw = request.query.get("groups", "")
     chosen = [g.strip() for g in raw.split(",") if g.strip()] if raw else None
     controls = list(hub.store.controls.values())
-    card = build_zone_card(controls, chosen)
+    card, omitted = build_zone_card(controls, chosen)
     if card is None:
         return web.json_response(
             {"error": "no exposed zones — a zone needs a gain control"},
@@ -492,6 +492,9 @@ async def zone_card(request: web.Request) -> web.Response:
         "card": card,
         "keys": sorted(set(card["entities"].values())),
         "available_groups": zone_groups(controls),
+        # More zones than one rack can draw: name them rather than let the
+        # card imply these are all of them.
+        "omitted_groups": omitted,
     })
 
 
