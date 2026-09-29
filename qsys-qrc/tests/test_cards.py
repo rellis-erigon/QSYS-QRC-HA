@@ -1,7 +1,11 @@
 """Building a zone-rack card from the controls a Core exposes."""
+import sys
 import types
+from pathlib import Path
 
-import cards
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+import cards  # noqa: E402
 
 
 def control(group, name, key, enabled=True):
