@@ -5,6 +5,9 @@ pair and share a version number. CI fails the build if they drift.
 
 ## 0.3.3 — 2026-10-13
 
+- **Fix**: Stop declaring `aiohttp` in the manifest. Home Assistant ships
+  it, and a custom integration that lists it is rejected — caught by the
+  hassfest check this release adds.
 - **Fix**: Register a device for each Core. Group devices hung off their
   Core with `via_device`, which Home Assistant removes in 2027.8, and
   nothing in the integration ever created the Core device it named — so the
