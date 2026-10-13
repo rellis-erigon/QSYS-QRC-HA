@@ -3,6 +3,21 @@
 The add-on and the Home Assistant integration are released as a matched
 pair and share a version number. CI fails the build if they drift.
 
+## 0.3.3 — 2026-10-13
+
+- **Fix**: Register a device for each Core. Group devices hung off their
+  Core with `via_device`, which Home Assistant removes in 2027.8, and
+  nothing in the integration ever created the Core device it named — so the
+  link pointed at nothing and was silently dropped, leaving every group
+  device parentless. Cores are now registered on each refresh, carrying
+  their platform as the model and a link to the Core's web interface, and
+  groups reference them by registry id.
+- Added integration tests. The add-on had 102 of them and the integration
+  had none; there are now 13 covering the Core device and the group link,
+  with Home Assistant stubbed so they need no install of it.
+- Added a build check that fails on site-specific detail, matching the
+  sibling repositories.
+
 ## 0.2.0 — 2026-09-24
 
 - **Feature**: Force a re-scan of the Core, from the panel or via

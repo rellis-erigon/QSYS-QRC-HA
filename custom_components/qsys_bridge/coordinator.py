@@ -17,11 +17,12 @@ from typing import Any
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import CONF_ADDON_URL, RECONCILE_INTERVAL
+from .const import CONF_ADDON_URL, DOMAIN, RECONCILE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,6 +96,9 @@ class QsysCoordinator(DataUpdateCoordinator[dict[str, QsysControl]]):
         self.entry = entry
         self.url = entry.data[CONF_ADDON_URL].rstrip("/")
         self.cores: dict[str, dict] = {}
+        # Registry ids of the Core devices, keyed by Core name. Entities hang
+        # their group device off these; see async_register_core_devices.
+        self.core_device_ids: dict[str, str] = {}
         self._session = async_get_clientsession(hass)
         self._stream_task: asyncio.Task | None = None
 
@@ -110,6 +114,7 @@ class QsysCoordinator(DataUpdateCoordinator[dict[str, QsysControl]]):
             raise UpdateFailed(f"Could not reach the add-on: {err}") from err
 
         self.cores = payload.get("cores", {})
+        self.async_register_core_devices()
         controls = {}
         for entry in payload.get("controls", []):
             try:
@@ -121,6 +126,35 @@ class QsysCoordinator(DataUpdateCoordinator[dict[str, QsysControl]]):
 
         self._ensure_stream()
         return controls
+
+    @callback
+    def async_register_core_devices(self) -> None:
+        """Give every Core a device of its own.
+
+        The groups are what hold the entities, but they belong to a Core, and
+        a link can only be made to a device that exists. Registering the Cores
+        here — rather than letting an entity imply one — is what makes
+        `via_device_id` on the group devices valid. Called on every refresh so
+        that a Core added in the add-on later is picked up.
+        """
+        registry = dr.async_get(self.hass)
+        for name, core in self.cores.items():
+            kwargs = {
+                # Prefixed, because a Core and a group share one identifier
+                # namespace and a Core called `CoreA_Main Hall` would
+                # otherwise claim CoreA's Main Hall group.
+                "identifiers": {(DOMAIN, f"core_{name}")},
+                "name": name,
+                "manufacturer": "QSC",
+                "model": core.get("platform") or "Q-SYS Core",
+            }
+            host = core.get("host")
+            if host:
+                kwargs["configuration_url"] = f"http://{host}"
+            device = registry.async_get_or_create(
+                config_entry_id=self.entry.entry_id, **kwargs
+            )
+            self.core_device_ids[name] = device.id
 
     # -- live stream -----------------------------------------------------
 

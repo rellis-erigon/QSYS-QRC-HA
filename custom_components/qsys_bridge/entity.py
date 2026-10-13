@@ -37,8 +37,14 @@ class QsysEntity(CoordinatorEntity[QsysCoordinator]):
             name=group,
             manufacturer="QSC",
             model="Q-SYS",
-            via_device=(DOMAIN, control.core),
         )
+        # Hang the group off its Core's device by registry id. `via_device` is
+        # deprecated (removed in 2027.8), and it quietly accepted an
+        # identifier for a device nothing had created — which is exactly what
+        # this integration was passing it.
+        core_device_id = coordinator.core_device_ids.get(control.core)
+        if core_device_id:
+            device_info["via_device_id"] = core_device_id
         if control.area:
             # A suggestion rather than an assignment: Home Assistant creates
             # the area if it is new, and never overrides a device someone
